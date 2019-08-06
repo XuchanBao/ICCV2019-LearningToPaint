@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam, SGD
 from Renderer.model import *
+# from Renderer.stroke_gen import decode, Decoder
+from Renderer.quadratic_gen import decode
 from DRL.rpm import rpm
 from DRL.actor import *
 from DRL.critic import *
@@ -20,38 +22,29 @@ coord = coord.to(device)
 
 criterion = nn.MSELoss()
 
-Decoder = FCN()
-Decoder.load_state_dict(torch.load('../renderer.pkl'))
-
-def decode(x, canvas): # b * (10 + 3)
-    x = x.view(-1, 10 + 3)
-    stroke = 1 - Decoder(x[:, :10])
-    stroke = stroke.view(-1, 128, 128, 1)
-    color_stroke = stroke * x[:, -3:].view(-1, 1, 1, 3)
-    stroke = stroke.permute(0, 3, 1, 2)
-    color_stroke = color_stroke.permute(0, 3, 1, 2)
-    stroke = stroke.view(-1, 5, 1, 128, 128)
-    color_stroke = color_stroke.view(-1, 5, 3, 128, 128)
-    for i in range(5):
-        canvas = canvas * (1 - stroke[:, i]) + color_stroke[:, i]
-    return canvas
 
 def cal_trans(s, t):
     return (s.transpose(0, 3) * t).transpose(0, 3)
     
 class DDPG(object):
-    def __init__(self, batch_size=64, env_batch=1, max_step=40, \
+    def __init__(self, state_dim, merged_state_dim, act_dim, batch_size=64, env_batch=1, max_step=40, \
                  tau=0.001, discount=0.9, rmsize=800, \
                  writer=None, resume=None, output_path=None):
 
+        self.state_dim = state_dim
+        self.merged_state_dim = merged_state_dim
+        self.act_dim = act_dim
         self.max_step = max_step
         self.env_batch = env_batch
-        self.batch_size = batch_size        
+        self.batch_size = batch_size
 
-        self.actor = ResNet(9, 18, 65) # target, canvas, stepnum, coordconv 3 + 3 + 1 + 2
-        self.actor_target = ResNet(9, 18, 65)
-        self.critic = ResNet_wobn(9, 18, 1)
-        self.critic_target = ResNet_wobn(9, 18, 1) 
+        # input channel (state_dim): canvas, gt, parameters, stepnum  3 + 3 + 2 + 1
+        self.actor = ResNet(self.state_dim, 18, self.act_dim)
+        self.actor_target = ResNet(self.state_dim, 18, self.act_dim)
+
+        # input channel (merged_state_dim): canvas, parameters, stepnum, coordconv  3 + 2 + 1 + 2
+        self.critic = ResNet_wobn(self.merged_state_dim, 18, 1)
+        self.critic_target = ResNet_wobn(self.merged_state_dim, 18, 1)
 
         self.actor_optim  = Adam(self.actor.parameters(), lr=1e-2)
         self.critic_optim  = Adam(self.critic.parameters(), lr=1e-2)
@@ -94,15 +87,26 @@ class DDPG(object):
             self.writer.add_scalar('train/gan_penal', penal, self.log)       
         
     def evaluate(self, state, action, target=False):
-        T = state[:, 6 : 7]
-        gt = state[:, 3 : 6].float() / 255
+        """
+        Evaluate Q, given the current state and action
+        :param state: (canvas, gt, parameters, timestep), shape = (N, 9, height, width)
+        :param action: shape = (N, 2)
+        :param target: whether we're evaluating using critic_target
+        :return: Q, gan_reward
+        """
         canvas0 = state[:, :3].float() / 255
+        gt = state[:, 3:6].float() / 255
+        params = state[:, 6:8]
+        T = state[:, 8:9]
         with torch.no_grad(): # model free
-            canvas1 = decode(action, canvas0)
+            canvas1, new_params = decode(action, params)
         gan_reward = cal_reward(canvas1, gt) - cal_reward(canvas0, gt) # (batchsize, 64)
         # L2_reward = ((canvas0 - gt) ** 2).mean(1).mean(1).mean(1) - ((canvas1 - gt) ** 2).mean(1).mean(1).mean(1)        
         coord_ = coord.expand(state.shape[0], 2, 128, 128)
+
+        # model-free does not assume access to canvas1 for critic
         merged_state = torch.cat([canvas0, gt, (T + 1).float() / self.max_step, coord_], 1)
+
         if target:
             Q = self.critic_target([merged_state, action])
             return Q, gan_reward
@@ -155,9 +159,11 @@ class DDPG(object):
 
     def observe(self, reward, state, done, step):
         s0 = torch.tensor(self.state, device='cpu')
+        # s0 = self.state.clone().detach()
         a = to_tensor(self.action, "cpu")
         r = to_tensor(reward, "cpu")
         s1 = torch.tensor(state, device='cpu')
+        # s1 = state.clone().detach()
         d = to_tensor(done.astype('float32'), "cpu")
         for i in range(self.env_batch):
             self.memory.append([s0[i], a[i], r[i], s1[i], d[i]])
@@ -213,7 +219,7 @@ class DDPG(object):
         self.critic_target.train()
     
     def choose_device(self):
-        Decoder.to(device)
+        # Decoder.to(device)
         self.actor.to(device)
         self.actor_target.to(device)
         self.critic.to(device)

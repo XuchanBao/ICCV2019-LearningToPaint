@@ -1,5 +1,24 @@
 import cv2
+import torch
 import numpy as np
+from Renderer.model import FCN
+
+Decoder = FCN()
+Decoder.load_state_dict(torch.load('../renderer.pkl'))
+
+def decode(x, canvas): # b * (10 + 3)
+    x = x.view(-1, 10 + 3)
+    stroke = 1 - Decoder(x[:, :10])
+    stroke = stroke.view(-1, 128, 128, 1)
+    color_stroke = stroke * x[:, -3:].view(-1, 1, 1, 3)
+    stroke = stroke.permute(0, 3, 1, 2)
+    color_stroke = color_stroke.permute(0, 3, 1, 2)
+    stroke = stroke.view(-1, 5, 1, 128, 128)
+    color_stroke = color_stroke.view(-1, 5, 3, 128, 128)
+    for i in range(5):
+        canvas = canvas * (1 - stroke[:, i]) + color_stroke[:, i]
+    return canvas
+
 
 def normal(x, width):
     return (int)(x * (width - 1) + 0.5)

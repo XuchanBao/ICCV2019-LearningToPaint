@@ -11,7 +11,7 @@ import time
 exp = os.path.abspath('.').split('/')[-1]
 writer = TensorBoard('../train_log/{}'.format(exp))
 os.system('ln -sf ../train_log/{} ./log'.format(exp))
-os.system('mkdir ./model')
+os.system('mkdir -p ./model')
 
 def train(agent, env, evaluate):
     train_times = args.train_times
@@ -78,6 +78,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Learning to Paint')
 
     # hyper-parameter
+    parser.add_argument('--state_dim', default=9, type=int, help='state dimension (canvas, gt, params, timestep)')
+    parser.add_argument('--merged_state_dim', default=8, type=int, help='merged state dimension (canvas, params, timestep, coord)')
+    parser.add_argument('--action_dim', default=2, type=int, help='action dimension')
     parser.add_argument('--warmup', default=400, type=int, help='timestep without training but only filling the replay memory')
     parser.add_argument('--discount', default=0.95**5, type=float, help='discount factor')
     parser.add_argument('--batch_size', default=96, type=int, help='minibatch size')
@@ -106,7 +109,7 @@ if __name__ == "__main__":
     from DRL.ddpg import DDPG
     from DRL.multi import fastenv
     fenv = fastenv(args.max_step, args.env_batch, writer)
-    agent = DDPG(args.batch_size, args.env_batch, args.max_step, \
+    agent = DDPG(args.state_dim, args.merged_state_dim, args.action_dim, args.batch_size, args.env_batch, args.max_step, \
                  args.tau, args.discount, args.rmsize, \
                  writer, args.resume, args.output)
     evaluate = Evaluator(args, writer)

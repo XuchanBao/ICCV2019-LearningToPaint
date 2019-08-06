@@ -6,6 +6,7 @@ import argparse
 import torchvision.transforms as transforms
 import cv2
 from DRL.ddpg import decode
+from Renderer.quadratic_gen import get_initialization, generate_quadratic_heatmap
 from utils.util import *
 from PIL import Image
 from torchvision import transforms, utils
@@ -31,16 +32,18 @@ class Paint:
         self.action_space = (13)
         self.observation_space = (self.batch_size, width, width, 7)
         self.test = False
+
+        self.parameters = None
         
     def load_data(self):
         # CelebA
         global train_num, test_num
-        for i in range(200000):            
+        for i in range(200000):
             img_id = '%06d' % (i + 1)
             try:
                 img = cv2.imread('../data/img_align_celeba/' + img_id + '.jpg', cv2.IMREAD_UNCHANGED)
                 img = cv2.resize(img, (width, width))
-                if i > 2000:                
+                if i > 2000:
                     train_num += 1
                     img_train.append(img)
                 else:
@@ -74,23 +77,33 @@ class Paint:
             self.gt[i] = torch.tensor(self.pre_data(id, test))
         self.tot_reward = ((self.gt.float() / 255) ** 2).mean(1).mean(1).mean(1)
         self.stepnum = 0
-        self.canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.uint8).to(device)
+
+        self.parameters = get_initialization(self.batch_size)
+        self.canvas, _, __ = generate_quadratic_heatmap(self.parameters)
+        self.canvas = self.canvas.reshape(-1, 3, width, width).to(device)
+
+        self.parameters = self.parameters.unsqueeze(-1).unsqueeze(-1).expand(self.parameters.size() + (128, 128))
+        self.parameters = self.parameters.to(device)
+
         self.lastdis = self.ini_dis = self.cal_dis()
         return self.observation()
     
     def observation(self):
         # canvas B * 3 * width * width
         # gt B * 3 * width * width
+        # params B * 2 * width * width
         # T B * 1 * width * width
-        ob = []
+        # Total: (B, 9, width, width)
         T = torch.ones([self.batch_size, 1, width, width], dtype=torch.uint8) * self.stepnum
-        return torch.cat((self.canvas, self.gt, T.to(device)), 1) # canvas, img, T
+        return torch.cat((self.canvas.float(), self.gt.float(), self.parameters, T.float().to(device)), 1) # canvas, gt_img, params, T
 
     def cal_trans(self, s, t):
         return (s.transpose(0, 3) * t).transpose(0, 3)
     
     def step(self, action):
-        self.canvas = (decode(action, self.canvas.float() / 255) * 255).byte()
+        self.canvas, self.parameters = decode(action, self.parameters)
+        self.canvas = (self.canvas * 255).byte()
+        self.canvas = self.canvas.reshape(-1, 3, width, width)
         self.stepnum += 1
         ob = self.observation()
         done = (self.stepnum == self.max_step)
