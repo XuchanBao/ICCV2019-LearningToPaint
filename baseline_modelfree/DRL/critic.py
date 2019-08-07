@@ -92,8 +92,11 @@ class Bottleneck(nn.Module):
         return out
 
 class ResNet_wobn(nn.Module):
-    def __init__(self, num_inputs, depth, num_outputs):
+    def __init__(self, num_inputs, depth, num_outputs, act_dim):
         super(ResNet_wobn, self).__init__()
+
+        self.act_dim = act_dim
+        self.coord_dim = 2
         self.in_planes = 64
 
         block, num_blocks = cfg(depth)
@@ -104,7 +107,7 @@ class ResNet_wobn(nn.Module):
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=1)
         self.conv4 = weightNorm(nn.Conv2d(512, 1, 1, 1, 0))
         self.relu_1 = TReLU()
-        self.conv1 = weightNorm(nn.Conv2d(65 + 2, 64, 1, 1, 0))        
+        self.conv1 = weightNorm(nn.Conv2d(self.act_dim + self.coord_dim, 64, 1, 1, 0))
         self.conv2 = weightNorm(nn.Conv2d(64, 64, 1, 1, 0))
         self.conv3 = weightNorm(nn.Conv2d(64, 32, 1, 1, 0))
         self.relu_2 = TReLU()

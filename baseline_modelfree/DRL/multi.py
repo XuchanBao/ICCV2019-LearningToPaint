@@ -7,12 +7,13 @@ from DRL.ddpg import decode
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class fastenv():
-    def __init__(self, 
+    def __init__(self,
+                 obs_dim, act_dim,
                  max_episode_length=10, env_batch=64, \
                  writer=None):
         self.max_episode_length = max_episode_length
         self.env_batch = env_batch
-        self.env = Paint(self.env_batch, self.max_episode_length)
+        self.env = Paint(obs_dim, act_dim, self.env_batch, self.max_episode_length)
         self.env.load_data()
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space

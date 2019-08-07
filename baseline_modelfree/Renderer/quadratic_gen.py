@@ -30,6 +30,7 @@ def decode(delta_params, curr_params):
 
     next_canvas, _, __ = generate_quadratic_heatmap(next_params[:, :, 0, 0])  # shape = (N, 3, 128, 128)
 
+    next_canvas = next_canvas.reshape(-1, 3, DEFAULT_HEIGHT, DEFAULT_WIDTH)
     normalized_next_canvas = next_canvas.float() / 255.0
 
     return normalized_next_canvas, next_params

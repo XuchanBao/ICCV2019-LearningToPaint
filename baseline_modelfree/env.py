@@ -26,11 +26,11 @@ train_num = 0
 test_num = 0
 
 class Paint:
-    def __init__(self, batch_size, max_step):
+    def __init__(self, obs_dim, act_dim, batch_size, max_step):
         self.batch_size = batch_size
         self.max_step = max_step
-        self.action_space = (13)
-        self.observation_space = (self.batch_size, width, width, 7)
+        self.action_space = act_dim
+        self.observation_space = (self.batch_size, width, width, obs_dim)
         self.test = False
 
         self.parameters = None
@@ -103,7 +103,7 @@ class Paint:
     def step(self, action):
         self.canvas, self.parameters = decode(action, self.parameters)
         self.canvas = (self.canvas * 255).byte()
-        self.canvas = self.canvas.reshape(-1, 3, width, width)
+
         self.stepnum += 1
         ob = self.observation()
         done = (self.stepnum == self.max_step)

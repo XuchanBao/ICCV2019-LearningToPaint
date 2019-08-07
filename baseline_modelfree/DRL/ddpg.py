@@ -43,8 +43,8 @@ class DDPG(object):
         self.actor_target = ResNet(self.state_dim, 18, self.act_dim)
 
         # input channel (merged_state_dim): canvas, parameters, stepnum, coordconv  3 + 2 + 1 + 2
-        self.critic = ResNet_wobn(self.merged_state_dim, 18, 1)
-        self.critic_target = ResNet_wobn(self.merged_state_dim, 18, 1)
+        self.critic = ResNet_wobn(self.merged_state_dim, 18, 1, self.act_dim)
+        self.critic_target = ResNet_wobn(self.merged_state_dim, 18, 1, self.act_dim)
 
         self.actor_optim  = Adam(self.actor.parameters(), lr=1e-2)
         self.critic_optim  = Adam(self.critic.parameters(), lr=1e-2)
@@ -105,7 +105,7 @@ class DDPG(object):
         coord_ = coord.expand(state.shape[0], 2, 128, 128)
 
         # model-free does not assume access to canvas1 for critic
-        merged_state = torch.cat([canvas0, gt, (T + 1).float() / self.max_step, coord_], 1)
+        merged_state = torch.cat([canvas0, gt, params, (T + 1).float() / self.max_step, coord_], 1)
 
         if target:
             Q = self.critic_target([merged_state, action])
